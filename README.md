@@ -1,40 +1,40 @@
-# How to stream k3s logs to CloudWatch using Rancher logging
+#   How to stream k3s journal logs to CloudWatch on Rancher
 
 ### Requirements:
 
  - Gather k3s journal logs from each node in the cluster.
- - Parse the logs to forward only required fields.
+ - Parse the logs to forward only the required fields.
  - Forward the parsed data to cloudwatch.
 
 ### Solution:
 
-Rancher uses this logging operator https://kube-logging.github.io/docs/ that comes with below CRDS:
+Rancher uses this [logging operator](https://kube-logging.github.io/docs/) that comes with the below CRDS:
  
  - flow
  - clusterFlow
  - output
  - clusterOutput
 
-You can read more about them here https://kube-logging.github.io/docs/configuration/
+You can read more about them [here](https://kube-logging.github.io/docs/configuration/)
 
 We will be using clusterFlow and clusterOutput as they are not namespaced.
 
-clusterFlow defines a logging flow for Fluentd with filters and outputs. Using this we can define and apply filters to select only the desired data. Once parsed, data will be forwarded to clusterOutput object.
+clusterFlow defines a logging flow for Fluentd with filters and outputs. Using this, we can define and apply filters to select only the desired data. Once parsed, data will be forwarded to the clusterOutput object.
 
-clusterOutput defines where to send the data. It supports several plugins https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/ but we will be using Cloudwatch. You can read the spec here https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/cloudwatch/.
+clusterOutput defines where to send the data. It supports several [plugins](https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/), but we will be using Cloudwatch. You can read the spec [here](https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/cloudwatch/).
 
 
-Now we have clusterFlow to parse the data, and clusterOutput to define the destination of data. We need a way to get the journal logs from the nodes. HostTailer https://banzaicloud.com/docs/one-eye/logging-operator/configuration/crds/extensions/ is a CRD provided by https://banzaicloud.com/ supported on Rancher.
+Now we have clusterFlow to parse the data and clusterOutput to define the destination of data. We need a way to get the journal logs from the nodes. [HostTailer](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/crds/extensions/) is a CRD provided by https://banzaicloud.com/ supported on Rancher.
 
-From the doc `HostTailer’s main goal is to tail custom files and transmit their changes to stdout. This way the logging-operator is able to process them`. An example usage is provided here https://banzaicloud.com/docs/one-eye/logging-operator/configuration/extensions/kubernetes-host-tailer/.
+From the doc HostTailer’s main goal is to tail custom files and transmit their changes to stdout. This way, the logging-operator is able to process them. An example usage is provided [here](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/extensions/kubernetes-host-tailer/).
 
-Similarly if you know the log file name, you can also use the file-tailer. 
+Similarly, you can use the file-tailer if you know the log file name. 
 
-The difference between the two is host-tailer looks at specific systemd service logs like k3s.service logs, while for file-tailer you need specify the exact location of the log file like /var/log/nginx/access.log. 
+The difference between the two is host-tailer looks at specific systemd service logs like k3s.service logs, while for file-tailer, you need to specify the exact location of the log file like /var/log/nginx/access.log. 
 
 Here is the YAML to get the systemd journal logs from each host. This will create a daemonset. Pods will fetch the logs from the journal logs and output them to stdout.
 
-`
+```SHELL
 apiVersion: logging-extensions.banzaicloud.io/v1alpha1
 kind: HostTailer
 metadata:
@@ -46,11 +46,11 @@ spec:
       maxEntries: 100
       path: /run/log/journal/
       systemdFilter: k3s.service
-`
+```
 
-The log output will be then fed to clusterFlow, which will parse the logs.
+The log output will then be fed to clusterFlow, which parses the logs.
 
-`
+```SHELL
 apiVersion: logging.banzaicloud.io/v1beta1
 kind: ClusterFlow
 metadata:
@@ -71,15 +71,15 @@ spec:
           app.kubernetes.io/name: host-tailer
   globalOutputRefs:
     - host-logging-cloudwatch
-`
+```
 
-Here we are matching the app name to the name of host tailer daemonset which is host-tailer. Once matched, we are parsing them using 'parser' https://docs.fluentd.org/filter/parser plugin. We only need the message field from the logs, so key_name is specified as 'message' and parse type is set to json to get the ouptut in json.
+Here we are matching the app name to the name of host tailer daemonset, which is host-tailer. Once matched, we are parsing them using the [parser](https://docs.fluentd.org/filter/parser) plugin. We only need the message field from the logs, so key_name is specified as 'message' and parse type is set to JSON to get the output in JSON.
 
-After this from the message field we are removing unwanted fields using remove_keys spec from the record_transformer https://docs.fluentd.org/filter/record_transformer plugin.
+After this, we remove unwanted fields from the message field using the remove_keys spec from the [record_transformer](https://docs.fluentd.org/filter/record_transformer) plugin.
 
 The globalOutputRefs is set to the name of the clusterOutput. 
 
-`
+```SHELL
 
 apiVersion: logging.banzaicloud.io/v1beta1
 kind: ClusterOutput
@@ -99,6 +99,6 @@ spec:
     log_stream_name: host-logs
     region: aws-region
 
-`
+```
 
-In the clusterOutput spec we are using cloudwatch with log_group_name, log_stream_name, region values passed a variable.
+In the clusterOutput spec, we use cloudwatch with log_group_name, log_stream_name, and region values passed a variable.
