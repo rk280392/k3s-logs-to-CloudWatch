@@ -17,22 +17,18 @@ Rancher uses this [logging operator](https://kube-logging.github.io/docs/) that 
 
 You can read more about them [here](https://kube-logging.github.io/docs/configuration/)
 
-We will be using clusterFlow and clusterOutput as they are not namespaced.
-
-clusterFlow defines a logging flow for Fluentd with filters and outputs. Using this, we can define and apply filters to select only the desired data. Once parsed, data will be forwarded to the clusterOutput object.
-
-clusterOutput defines where to send the data. It supports several [plugins](https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/), but we will be using Cloudwatch. You can read the spec [here](https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/cloudwatch/).
+We will be using clusterFlow and clusterOutput as they are not namespaced. The clusterFlow CRD defines a logging flow for Fluentd with filters and outputs. Using this, we can define and apply filters to select only the desired data. Once parsed, data will be forwarded to the clusterOutput object. The clusterOutput CRD defines where to send the data. It supports several [plugins](https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/), but we will use Cloudwatch. You can read the spec [here](https://banzaicloud.com/docs/one-eye/logging-operator/plugins/outputs/cloudwatch/).
 
 
-Now we have clusterFlow to parse the data and clusterOutput to define the destination of data. We need a way to get the journal logs from the nodes. [HostTailer](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/crds/extensions/) is a CRD provided by https://banzaicloud.com/ supported on Rancher.
+Now we have clusterFlow to parse the data and clusterOutput to define the destination of data. We need a way to get the journal logs from the nodes.
 
-From the doc HostTailer’s main goal is to tail custom files and transmit their changes to stdout. This way, the logging-operator is able to process them. An example usage is provided [here](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/extensions/kubernetes-host-tailer/).
+[HostTailer](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/crds/extensions/) CRD is provided by https://banzaicloud.com/ and is supported on the Rancher. From the doc, `HostTailer’s main goal is to tail custom files and transmit their changes to stdout.` This way, the logging-operator can process them. An example usage is provided [here](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/extensions/kubernetes-host-tailer/).
 
-Similarly, you can use the file-tailer if you know the log file name. 
+Similarly, you can use the [file-tailer](https://banzaicloud.com/docs/one-eye/logging-operator/configuration/extensions/kubernetes-host-tailer/#create-file-tailer) if you know the log file name. 
 
 The difference between the two is host-tailer looks at specific systemd service logs like k3s.service logs, while for file-tailer, you need to specify the exact location of the log file like /var/log/nginx/access.log. 
 
-Here is the YAML to get the systemd journal logs from each host. This will create a daemonset. Pods will fetch the logs from the journal logs and output them to stdout.
+Here is the YAML to get the systemd journal logs from each host. This will create a daemonset. Pods will fetch the logs from the journal log files of the specified service name and output them to stdout.
 
 ```SHELL
 apiVersion: logging-extensions.banzaicloud.io/v1alpha1
@@ -73,14 +69,11 @@ spec:
     - host-logging-cloudwatch
 ```
 
-Here we are matching the app name to the name of host tailer daemonset, which is host-tailer. Once matched, we are parsing them using the [parser](https://docs.fluentd.org/filter/parser) plugin. We only need the message field from the logs, so key_name is specified as 'message' and parse type is set to JSON to get the output in JSON.
-
-After this, we remove unwanted fields from the message field using the remove_keys spec from the [record_transformer](https://docs.fluentd.org/filter/record_transformer) plugin.
+Here we are matching the app name to the name of the host-tailer daemonset, which is host-tailer. Once matched, we are parsing them using the [parser](https://docs.fluentd.org/filter/parser) plugin. We only need the **message** field from the logs, so **key_name** is specified as **message**, and **parse** type is set to **json**. After this, we remove unwanted fields from the message field using the remove_keys spec from the [record_transformer](https://docs.fluentd.org/filter/record_transformer) plugin.
 
 The globalOutputRefs is set to the name of the clusterOutput. 
 
 ```SHELL
-
 apiVersion: logging.banzaicloud.io/v1beta1
 kind: ClusterOutput
 metadata:
@@ -98,7 +91,6 @@ spec:
     log_group_name: hosted-group
     log_stream_name: host-logs
     region: aws-region
-
 ```
 
 In the clusterOutput spec, we use cloudwatch with log_group_name, log_stream_name, and region values passed a variable.
